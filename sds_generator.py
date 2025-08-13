@@ -21,45 +21,70 @@ import os
 
 def fetch_compound_data(smiles):
     """
-    Fetch compound data from PubChem using SMILES.
-    Returns a dict with all required molecular properties.
+    Fetch compound data from PubChem. If not found, use heuristic estimates.
     """
     try:
-        compounds = pcp.get_compounds(smiles, 'smiles', timeout=10)
-        if not compounds:
-            return None
-        c = compounds[0]
+        compounds = pcp.get_compounds(smiles.strip(), 'smiles', timeout=10)
+        if compounds:
+            c = compounds[0]
+            def safe_float(val, default=0.0):
+                try:
+                    return float(val) if val not in [None, '--'] else default
+                except:
+                    return default
 
-        def safe_float(val, default=0.0):
-            try:
-                return float(val) if val not in [None, '--'] else default
-            except:
-                return default
+            def safe_int(val, default=0):
+                try:
+                    return int(val) if val is not None else default
+                except:
+                    return default
 
-        def safe_int(val, default=0):
-            try:
-                return int(val) if val is not None else default
-            except:
-                return default
-
-        return {
-            "name": c.iupac_name or (c.synonyms[0] if c.synonyms else "Unknown Compound"),
-            "formula": c.molecular_formula or "Not available",
-            "mw": safe_float(c.molecular_weight),
-            "cas": getattr(c, 'cas', "Not available"),
-            "logp": safe_float(c.xlogp, default=2.0),
-            "tpsa": safe_float(c.tpsa, default=0.0),
-            "h_bond_donor": safe_int(c.h_bond_donor_count),
-            "h_bond_acceptor": safe_int(c.h_bond_acceptor_count),
-            "rotatable_bonds": safe_int(c.rotatable_bond_count),
-            "heavy_atoms": safe_int(c.heavy_atom_count),
-            "solubility": "Highly soluble" if c.molecular_weight < 500 and c.xlogp < 3 else "Low solubility"
-        }
+            return {
+                "name": c.iupac_name or (c.synonyms[0] if c.synonyms else "Unknown Compound"),
+                "formula": c.molecular_formula or "Not available",
+                "mw": safe_float(c.molecular_weight, 300.0),
+                "cas": getattr(c, 'cas', "Not available"),
+                "logp": safe_float(c.xlogp, 2.0),
+                "tpsa": safe_float(c.tpsa, 0.0),
+                "h_bond_donor": safe_int(c.h_bond_donor_count, 0),
+                "h_bond_acceptor": safe_int(c.h_bond_acceptor_count, 0),
+                "rotatable_bonds": safe_int(c.rotatable_bond_count, 0),
+                "heavy_atoms": safe_int(c.heavy_atom_count, 0),
+                "solubility": "Highly soluble" if c.molecular_weight < 500 and c.xlogp < 3 else "Low solubility",
+                "source": "pubchem"
+            }
     except Exception as e:
-        print(f"PubChem fetch failed: {e}")
-        return None
+        print(f"PubChem lookup failed: {e}")
 
+    # ————————————————————————————————
+    # FALLBACK: Estimate for novel compounds
+    # ————————————————————————————————
+    st.warning("⚠️ Compound not found in PubChem. Using estimated values for research purposes.")
 
+    # Very rough heuristic from SMILES string
+    mw = len(smiles) * 15  # Crude atom count × avg atomic mass
+    logp = 2.0
+    tpsa = 20.0
+    hbd = smiles.count("O") + smiles.count("N")  # OH, NH
+    hba = smiles.count("O") + smiles.count("N") + smiles.count("F")
+    rot_bonds = smiles.count("-") - smiles.count("=-")  # very rough
+    heavy_atoms = sum(c.isalpha() and c not in 'Hh' for c in smiles)
+
+    return {
+        "name": "Unknown (Novel Compound)",
+        "formula": "Not available",
+        "mw": mw,
+        "cas": "Not available",
+        "logp": logp,
+        "tpsa": tpsa,
+        "h_bond_donor": hbd,
+        "h_bond_acceptor": hba,
+        "rotatable_bonds": max(rot_bonds, 0),
+        "heavy_atoms": heavy_atoms,
+        "solubility": "Low solubility" if logp > 3 else "Moderate solubility",
+        "source": "estimated"
+    }
+    
 def predict_toxicity(smiles):
     """
     Simulate toxicity prediction using heuristic rules
