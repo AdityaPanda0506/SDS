@@ -22,6 +22,7 @@ import os
 def fetch_compound_data(smiles):
     """
     Fetch compound data from PubChem. If not found, use heuristic estimates.
+    Returns data dict with 'source' = 'pubchem' or 'estimated'
     """
     try:
         compounds = pcp.get_compounds(smiles.strip(), 'smiles', timeout=10)
@@ -59,28 +60,25 @@ def fetch_compound_data(smiles):
     # ————————————————————————————————
     # FALLBACK: Estimate for novel compounds
     # ————————————————————————————————
-    st.warning("⚠️ Compound not found in PubChem. Using estimated values for research purposes.")
-
-    # Very rough heuristic from SMILES string
-    mw = len(smiles) * 15  # Crude atom count × avg atomic mass
+    mw = len(smiles) * 15
     logp = 2.0
     tpsa = 20.0
-    hbd = smiles.count("O") + smiles.count("N")  # OH, NH
+    hbd = smiles.count("O") + smiles.count("N") - smiles.count("=O")  # rough OH/NH only
     hba = smiles.count("O") + smiles.count("N") + smiles.count("F")
-    rot_bonds = smiles.count("-") - smiles.count("=-")  # very rough
+    rot_bonds = smiles.count('-') - smiles.count('=-') - smiles.count('#')  # avoid double/triple
     heavy_atoms = sum(c.isalpha() and c not in 'Hh' for c in smiles)
 
     return {
         "name": "Unknown (Novel Compound)",
         "formula": "Not available",
-        "mw": mw,
+        "mw": max(mw, 50),
         "cas": "Not available",
         "logp": logp,
         "tpsa": tpsa,
-        "h_bond_donor": hbd,
+        "h_bond_donor": max(hbd, 0),
         "h_bond_acceptor": hba,
         "rotatable_bonds": max(rot_bonds, 0),
-        "heavy_atoms": heavy_atoms,
+        "heavy_atoms": max(heavy_atoms, 1),
         "solubility": "Low solubility" if logp > 3 else "Moderate solubility",
         "source": "estimated"
     }
