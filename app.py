@@ -2,11 +2,10 @@
 import streamlit as st
 import json
 import os
-import tempfile
 from datetime import datetime
 
-# Import your SDS generation logic
-from sds_generator import generate_sds, generate_docx, generate_pdf
+# Import your RDKit-free SDS generator
+from sds_generator import generate_sds, generate_docx
 
 # -----------------------------
 # Page Configuration
@@ -143,26 +142,17 @@ if generate_btn or smiles:
     if not smiles.strip():
         st.warning("Please enter a SMILES string to generate the SDS.")
     else:
-        with st.spinner("Validating molecule and fetching data..."):
-            try:
-                from rdkit import Chem
-                mol = Chem.MolFromSmiles(smiles.strip())
-                if mol is None:
-                    st.error("❌ Invalid SMILES string. Please check and try again.")
-            except Exception as e:
-                st.error(f"❌ RDKit error: {e}")
-                st.stop()
-
-            # Generate SDS
+        with st.spinner("Fetching data from PubChem..."):
+            # No RDKit validation — use PubChem to validate
             sds = generate_sds(smiles.strip())
             if sds is None:
-                st.error("Failed to generate SDS data.")
+                st.error("❌ Could not process the SMILES string. Please check spelling or try another compound.")
             else:
                 compound_name = sds["Section1"]["data"].get("Product Identifier", "Unknown Compound")
                 st.success(f"✅ SDS Generated for: **{compound_name}**")
 
                 # Tabs
-                tab1, tab2, tab3 = st.tabs(["📋 Report", "📥 Download Report", "📦 Export JSON"])
+                tab1, tab2, tab3 = st.tabs(["📋 Report", "📥 Download DOCX", "📦 Export JSON"])
 
                 # -----------------------------
                 # Tab 1: Interactive SDS Report
@@ -189,7 +179,6 @@ if generate_btn or smiles:
                                     else:
                                         val = str(value)
 
-                                    # Special styling for hazard section
                                     if i == 3 and "Hazard" in key:
                                         st.markdown(f"""
                                         <div style="background:#ffe6e6; border-left:5px solid #ff4d4d; padding:10px; margin:5px 0; border-radius:4px;">
@@ -201,56 +190,30 @@ if generate_btn or smiles:
                             else:
                                 st.markdown("*No data available.*")
 
-                            notes = section.get("notes", [])
-                            if notes:
-                                st.markdown('<div class="note-box">', unsafe_allow_html=True)
-                                for note in notes:
-                                    st.markdown(f"📌 {note}")
-                                st.markdown('</div>', unsafe_allow_html=True)
-
                             st.markdown('</div>', unsafe_allow_html=True)
 
                 # -----------------------------
-                # Tab 2: Download Reports
+                # Tab 2: Download DOCX
                 # -----------------------------
                 with tab2:
-                    st.subheader("📥 Download Reports")
-                    
-                    st.markdown("### 📄 Word Document")
-                    if st.button("📄 Generate & Download DOCX", type="primary", key="docx_btn"):
+                    st.subheader("📥 Download DOCX (Word Document)")
+
+                    if st.button("📄 Generate & Download DOCX", type="primary"):
                         with st.spinner("Generating Word document..."):
                             docx_path = generate_docx(sds, compound_name)
-                            if docx_path and os.path.exists(docx_path):
+                            if os.path.exists(docx_path):
                                 with open(docx_path, "rb") as f:
                                     st.download_button(
                                         label="⬇️ Download Word (.docx)",
                                         data=f.read(),
                                         file_name=f"SDS_{compound_name.replace(' ', '_')}.docx",
-                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        key="download_docx"
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                                     )
                                 # Clean up
                                 os.remove(docx_path)
                             else:
                                 st.error("Failed to generate DOCX.")
-                    
-                    st.markdown("### 📋 PDF Document")
-                    if st.button("📋 Generate & Download PDF", type="primary", key="pdf_btn"):
-                        with st.spinner("Generating PDF document..."):
-                            pdf_path = generate_pdf(sds, compound_name)
-                            if pdf_path and os.path.exists(pdf_path):
-                                with open(pdf_path, "rb") as f:
-                                    st.download_button(
-                                        label="⬇️ Download PDF (.pdf)",
-                                        data=f.read(),
-                                        file_name=f"SDS_{compound_name.replace(' ', '_')}.pdf",
-                                        mime="application/pdf",
-                                        key="download_pdf"
-                                    )
-                                # Clean up
-                                os.remove(pdf_path)
-                            else:
-                                st.error("Failed to generate PDF.")
+
                 # -----------------------------
                 # Tab 3: Export JSON
                 # -----------------------------
